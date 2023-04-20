@@ -4,13 +4,23 @@ const {
     createClient
 } = require('redis');
 
-const client = createClient();
+const client = createClient({
+    // socket: {
+    //     host: 'redis',
+    //     port: '6379'
+    // },
+    username: 'andrey',
+    password: 'rahasia'
+});
 const app = express();
-
 client.connect();
+
 client.on("connect", () => {
     console.log("Connected to Redis");
 })
+client.on('error', err => {
+    global.console.log(err.message)
+});
 
 app.get('/photos', async (req, res) => {
     const albumId = req.query.albumId;
