@@ -1,14 +1,10 @@
-// create express server
 const express = require('express');
-const fetch = require('node-fetch');
+const axios = require('axios');
 const {
     createClient
 } = require('redis');
 
-const USER_NAME = 'username';
-
 const client = createClient();
-
 const app = express();
 
 client.connect();
@@ -16,55 +12,36 @@ client.on("connect", () => {
     console.log("Connected to Redis");
 })
 
-function formatOuput(username, numOfRepos) {
-    return `${username} has ${numOfRepos} repos on GitHub`;
-}
-
-//? Request data from github
-async function getRepos(req, res) {
-    console.log("getRepos");
-    try {
-        const username = req.params[USER_NAME];
-
-        const response = await fetch(`https://api.github.com/users/${username}`);
-
-        const {
-            public_repos
-        } = await response.json();
-
-        //? Cache data to Redis
-        client.setEx(username, 600, JSON.stringify(public_repos));
-
-        res.send(formatOuput(username, public_repos));
-    } catch (error) {
-        console.log(error);
-        res.status(500).send(error);
-    }
-}
-
-//? Cache Middleware
-async function cache(req, res, next) {
-    const username = req.params[USER_NAME];
-    console.log(username);
-
-    const result = await client.get(username)
-
-    if (result !== null) {
-        console.log("data retrived from cache");
-        res.send(formatOuput(username, JSON.parse(result)));
-    } else {
+app.get('/photos', async (req, res) => {
+    const albumId = req.query.albumId;
+    const photos = await getOrSetCache(`photos?albumId=${albumId}`, async () => {
         console.log("data not retrived from cache");
-        next();
-    }
-}
-
-app.get(`/repos/:${USER_NAME}`, cache, getRepos);
-
-app.get('/', (req, res) => {
-    res.status(200).send({
-        message: 'redis x express'
+        const {
+            data
+        } = await axios.get(`https://jsonplaceholder.typicode.com/photos`, {
+            params: {
+                albumId
+            }
+        })
+        return data;
     });
+    res.json(photos);
 });
+
+function getOrSetCache(key, cb) {
+    return new Promise(async (resolve, reject) => {
+        const data = await client.get(key);
+
+        if (data !== null) {
+            console.log("data retrived from cache");
+            return resolve(JSON.parse(data));
+        }
+
+        const freshData = await cb();
+        client.setEx(key, 60, JSON.stringify(freshData));
+        resolve(freshData);
+    })
+}
 
 app.listen(port = 8080, () => {
     console.log(`Example app listening on port ${port}`)
